@@ -44,15 +44,53 @@ pip install -r requirements.txt
 
 ## 🖥️ Sample Output
 
-Paste a sample of your app's CLI or Streamlit output here so a reader can see what a generated plan looks like:
+Running `python main.py` builds a demo owner with two pets and six tasks, then prints
+today's plan twice — once with a normal time budget, and once with a tight one to show
+the filtering at work.
 
 ```
-# e.g.:
-# Daily plan for Biscuit (Golden Retriever):
-#   08:00 — Morning walk (30 min) [priority: high]
-#   09:00 — Feeding (10 min) [priority: high]
-#   ...
+$ python main.py
+
+Jordan has 2 pets and 6 tasks total.
+  - Mochi the dog: 3 task(s), 130 min of care
+  - Luna the cat: 3 task(s), 40 min of care
+
+Today's Schedule for Jordan (Tuesday)
+Time budget: 75 min | starting at 08:00
+------------------------------------------------------------------------
+  TIME   TASK            PET      LENGTH  PRIORITY  WHY
+------------------------------------------------------------------------
+  09:00  Medication      Luna      5 min  high      70 min of budget left
+  09:05  Breakfast       Mochi    10 min  high      60 min of budget left
+  09:15  Morning walk    Mochi    30 min  high      30 min of budget left
+  09:45  Brushing        Luna     15 min  medium    15 min of budget left
+------------------------------------------------------------------------
+  4 task(s) planned, 60 of 75 min used
+
+Didn't fit today:
+  Long hike       Mochi    90 min  low       needs 90 min, only 15 min left
+
+============================================================
+What if Jordan only had 25 minutes today?
+
+Today's Schedule for Jordan (Tuesday)
+Time budget: 25 min | starting at 08:00
+------------------------------------------------------------------------
+  TIME   TASK            PET      LENGTH  PRIORITY  WHY
+------------------------------------------------------------------------
+  09:00  Medication      Luna      5 min  high      20 min of budget left
+  09:05  Breakfast       Mochi    10 min  high      10 min of budget left
+------------------------------------------------------------------------
+  2 task(s) planned, 15 of 25 min used
+
+Didn't fit today:
+  Morning walk    Mochi    30 min  high      needs 30 min, only 10 min left
+  Brushing        Luna     15 min  medium    needs 15 min, only 10 min left
+  Long hike       Mochi    90 min  low       needs 90 min, only 10 min left
 ```
+
+Note that the weekly nail trim does not appear — it is only due on Mondays, and this
+run asks for a Tuesday.
 
 ## 🧪 Testing PawPal+
 
