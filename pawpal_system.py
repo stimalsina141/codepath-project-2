@@ -64,6 +64,10 @@ class Task:
         """Flag this task as done for the day."""
         self.completed = True
 
+    def reopen(self) -> None:
+        """Flag this task as not done after all, so it can be planned again."""
+        self.completed = False
+
     def priority_score(self) -> int:
         """Return the priority as a sortable number (higher = more urgent).
 

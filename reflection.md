@@ -60,7 +60,7 @@ The tradeoff with #2 and #3 is that Task now holds both input and output, so Sch
 
 My scheduler sorts by priority first and then assigns times by walking the clock forward from the start time. it never goes backwards and it never fills in a gap. so if a high priority task has a preferred_time later in the morning, that task gets scheduled first and drags the clock forward with it, and everything after it gets pushed back too.
 
-you can see it in my own demo. the morning walk has a preferred_time of 08:00, but Luna's medication is also high priority and only takes 5 minutes, so medication sorts first. medication wants 09:00, the clock jumps to 09:00, and the walk ends up at 09:15 even though it asked for 08:00. the whole 08:00 to 09:00 hour just sits empty.
+you can see it in my own demo. the morning walk has a preferred_time of 08:00, but Pichu's medication is also high priority and only takes 5 minutes, so medication sorts first. medication wants 09:00, the clock jumps to 09:00, and the walk ends up at 09:15 even though it asked for 08:00. the whole 08:00 to 09:00 hour just sits empty.
 
 I'm leaving it this way on purpose. the thing this app is actually for is making sure the important stuff gets done when the owner is short on time, and it does that correctly: the budget filtering and the priority order both work. the times are more of a suggested order than real appointments. fixing it properly would mean pinning the tasks that have a preferred_time into their slots first and then backfilling the free gaps around them, which is a bigger change than the rest of the scheduler needed, and it would mostly matter for the one case where someone sets a lot of preferred times.
 

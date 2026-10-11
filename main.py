@@ -19,9 +19,9 @@ def build_demo_owner() -> Owner:
     )
 
     mochi = Pet(pet_id="p1", name="Mochi", species="dog", breed="Shiba Inu", age=3)
-    luna = Pet(pet_id="p2", name="Luna", species="cat", breed="Tabby", age=6)
+    pichu = Pet(pet_id="p2", name="Pichu", species="cat", breed="Tabby", age=6)
     owner.add_pet(mochi)
-    owner.add_pet(luna)
+    owner.add_pet(pichu)
 
     mochi.add_task(
         Task(
@@ -53,7 +53,7 @@ def build_demo_owner() -> Owner:
         )
     )
 
-    luna.add_task(
+    pichu.add_task(
         Task(
             task_id="t4",
             title="Medication",
@@ -63,7 +63,7 @@ def build_demo_owner() -> Owner:
             preferred_time="09:00",
         )
     )
-    luna.add_task(
+    pichu.add_task(
         Task(
             task_id="t5",
             title="Brushing",
@@ -72,7 +72,7 @@ def build_demo_owner() -> Owner:
             category="grooming",
         )
     )
-    luna.add_task(
+    pichu.add_task(
         Task(
             task_id="t6",
             title="Nail trim",
