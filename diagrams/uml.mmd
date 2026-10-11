@@ -1,15 +1,67 @@
 classDiagram
-    %% Replace the placeholders below with your actual classes, attributes, methods, and relationships.
-    %% Keep this file updated so it matches your final implementation.
+    %% PawPal+ draft design (Phase 2). Update in Phase 6 to match the final implementation.
 
-    class ClassName {
-        +type attribute
-        +method() returnType
+    class Owner {
+        +str owner_id
+        +str name
+        +str email
+        +int available_minutes
+        +List~Pet~ pets
+        +add_pet(pet) None
+        +remove_pet(pet_id) bool
+        +get_pet(pet_id) Pet
+        +total_task_count() int
     }
 
-    class AnotherClass {
-        +type attribute
-        +method() returnType
+    class Pet {
+        +str pet_id
+        +str name
+        +str species
+        +str breed
+        +int age
+        +float weight_lbs
+        +str energy_level
+        +str notes
+        +List~Task~ tasks
+        +add_task(task) None
+        +remove_task(task_id) bool
+        +get_tasks() List~Task~
+        +get_pending_tasks() List~Task~
+        +total_duration() int
     }
 
-    ClassName --> AnotherClass : relationship
+    class Task {
+        +str task_id
+        +str title
+        +str category
+        +int duration_minutes
+        +str priority
+        +str preferred_time
+        +str recurrence
+        +bool completed
+        +mark_complete() None
+        +priority_score() int
+        +is_due_today(day) bool
+        +fits_in(minutes_left) bool
+    }
+
+    class Scheduler {
+        +Owner owner
+        +int available_minutes
+        +str start_time
+        +List~Task~ planned
+        +List~Task~ skipped
+        +List~str~ reasons
+        +generate_plan() List~Task~
+        +sort_tasks(tasks) List~Task~
+        +filter_by_budget(tasks) List~Task~
+        +assign_time_slots(tasks) List~Task~
+        +explain_plan() List~str~
+        +get_skipped_tasks() List~Task~
+        +reset() None
+    }
+
+    Owner "1" o-- "*" Pet : owns
+    Pet "1" o-- "*" Task : has
+    Scheduler "1" --> "1" Owner : plans for
+    Scheduler ..> Task : schedules
