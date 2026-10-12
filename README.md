@@ -1,30 +1,47 @@
 # PawPal+ (Module 2 Project)
 
-You are building **PawPal+**, a Streamlit app that helps a pet owner plan care tasks for their pet.
+**PawPal+** is a Streamlit app that helps a busy pet owner plan their pets' care around
+the time they actually have. You tell it your pets, the tasks they need, and how many
+minutes you can spare today. It builds a schedule, puts each task on the clock, warns you
+about clashes, and explains every decision it made.
 
-## Scenario
+## Features
 
-A busy pet owner needs help staying consistent with pet care. They want an assistant that can:
+**Priority ranking** — `Scheduler.sort_tasks()` orders tasks by priority (high → medium →
+low), then shortest first within a priority so a tight day fits as many as it can. An
+unrecognized priority scores 0 and sorts last instead of crashing the plan.
 
-- Track pet care tasks (walks, feeding, meds, enrichment, grooming, etc.)
-- Consider constraints (time available, priority, owner preferences)
-- Produce a daily plan and explain why it chose that plan
+**Budget filtering** — `Scheduler.filter_by_budget()` keeps tasks while the day's minutes
+hold out and skips the rest with a reason. It is greedy, not first-failure: a 90-minute
+hike that doesn't fit never blocks a 10-minute brushing behind it from using what's left.
 
-Your job is to design the system first (UML), then implement the logic in Python, then connect it to the Streamlit UI.
+**Sorting by time** — `Scheduler.sort_by_time()` returns the plan in clock order rather
+than priority order. It sorts on minutes-since-midnight, so a plan running past 24:00
+still lists its tasks last, and a hand-typed `9:00` still sorts before `10:00`.
 
-## What you will build
+**Gap filling** — `Scheduler.assign_time_slots()` treats tasks with a preferred time as
+anchors and places them in clock order. Flexible tasks fill the gaps between anchors if
+they finish in time, so no hour sits empty, and whatever is left runs after the last
+anchor.
 
-Your final app should:
+**Conflict warnings** — `Scheduler.detect_conflicts()` compares every pair of timed tasks
+and reports three kinds of clash: *same time*, *overlap*, and *late* (pushed more than 15
+minutes past its preferred time). It returns warnings rather than raising, so the plan
+always shows. Clashes count both within one pet and across pets, since the owner can't be
+in two places at once either.
 
-- Let a user enter basic owner + pet info
-- Let a user add/edit tasks (duration + priority at minimum)
-- Generate a daily schedule/plan based on constraints and priorities
-- Display the plan clearly (and ideally explain the reasoning)
-- Include tests for the most important scheduling behaviors
+**Daily and weekly recurrence** — completing a repeating task queues a fresh copy:
+`"daily"` lands the next day, `"weekly"` seven days out, `"once"` never. The finished task
+stays as history, and the copy is held out of plans until its due date.
+
+**Task filtering** — `Scheduler.filter_tasks()` narrows the task list by pet (id or name,
+any case) and by done/pending. This drives the app's "Show pet" and "Show status"
+dropdowns.
+
+**Explain-the-plan** — every task carries the reason it was chosen, placed, or skipped, so
+the schedule justifies itself instead of just listing times.
 
 ## Getting started
-
-### Setup
 
 ```bash
 python -m venv .venv
@@ -32,15 +49,22 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Suggested workflow
+Then run either front end:
 
-1. Read the scenario carefully and identify requirements and edge cases.
-2. Draft a UML diagram (classes, attributes, methods, relationships).
-3. Convert UML into Python class stubs (no logic yet).
-4. Implement scheduling logic in small increments.
-5. Add tests to verify key behaviors.
-6. Connect your logic to the Streamlit UI in `app.py`.
-7. Refine UML so it matches what you actually built.
+```bash
+streamlit run app.py   # the interactive app
+python main.py         # the terminal demo
+```
+
+## Project layout
+
+| File | What it holds |
+|------|---------------|
+| `pawpal_system.py` | The logic layer: `Owner`, `Pet`, `Task`, `Scheduler`. No Streamlit. |
+| `app.py` | The Streamlit UI. Calls into the logic layer and renders what it returns. |
+| `main.py` | A terminal demo that walks through every scheduling feature. |
+| `tests/test_pawpal.py` | 43 tests over the logic layer. |
+| `diagrams/uml_final.mmd` | The class diagram, matching the final code. |
 
 ## 🖥️ Sample Output
 
@@ -198,12 +222,14 @@ python -m pytest -q
 
 | Area | Tests | What it checks |
 |------|-------|----------------|
+| Task & pet basics | 2 | `mark_complete()` flips a task's status; `add_task()` grows the pet's list. |
 | Sorting | 5 | The plan comes back in clock order, not priority order. Flexible tasks fill the gaps before a timed task, or wait if they are too long for the gap. Untimed tasks sort last, and a hand-typed `8:00` still sorts before `10:00`. |
-| Recurrence | 8 | Completing a daily task queues a fresh copy due the next day; a weekly one lands seven days out; a `once` task does not repeat. Reopening a task removes the copy it queued, and a queued copy is not planned before its due date. |
+| Filtering | 2 | Narrowing the task list by pet id, by pet name in any case, and by done/pending. |
+| Recurrence | 9 | Completing a daily task queues a fresh copy due the next day; a weekly one lands seven days out; a `once` task does not repeat. Reopening a task removes the copy it queued, and a queued copy is not planned before its due date. |
 | Conflicts | 7 | Two tasks wanting the same time are flagged, whether they belong to the same pet or to different pets. Overlaps, three-way clashes, and tasks pushed more than 15 minutes late are all reported. Back-to-back tasks are not. |
 | Budget | 5 | Tasks that fit the day's minutes are kept and the rest are skipped with a reason. A task too big for the budget does not block a cheaper one behind it. |
 | Replanning | 2 | `reset()` wipes the times from the previous plan, so a second run never shows stale slots. |
-| Edge cases | 6 | No pets, a pet with no tasks, an unrecognized priority, and malformed times like `""`, `25:00` or `08:70`. |
+| Edge cases | 10 | No pets, a pet with no tasks, an unrecognized priority, a priority typed in any case, and malformed times like `""`, `oops`, `8`, `25:00` or `08:70`. |
 | Midnight | 1 | A plan running past 24:00 still lists its tasks in chronological order. |
 
 The two tests that matter most are `test_a_task_that_does_not_fit_does_not_block_cheaper_ones`, which guards the
@@ -261,20 +287,26 @@ sound — not that the app is.
 
 ### Sorting by time
 
-`Scheduler.sort_by_time(tasks)` returns tasks in clock order. It calls `sorted()` with a
-lambda key built from each task's `"HH:MM"` string:
+`Scheduler.sort_by_time(tasks)` returns tasks in clock order, sorting on
+`Task.sort_minutes()` — minutes since midnight as a number:
 
 ```python
-sorted(tasks, key=lambda task: (task.time_string() or "99:99", -task.priority_score(), task.title))
+def order(task):
+    minutes = task.sort_minutes()
+    return (float("inf") if minutes is None else minutes, -task.priority_score(), task.title)
+
+sorted(tasks, key=order)
 ```
 
-- **Why strings work:** zero-padded `"HH:MM"` strings sort the same as the times they
-  stand for (`"08:45" < "09:00" < "13:30"`). `Task.time_string()` pads a hand-typed
-  `"9:00"` to `"09:00"` so it doesn't sort after `"10:00"`.
 - **Which time it uses:** the assigned slot if the task has one, otherwise its preferred
-  time.
-- **Order of the rest:** tasks with no time get `"99:99"` and go last. Ties go to higher
-  priority, then title.
+  time. A hand-typed `"9:00"` is parsed to 540, so it sorts before `"10:00"` (600).
+- **Why minutes and not `"HH:MM"` strings:** sorting the display string looks like it
+  works, and breaks at midnight. A task pushed past 24:00 shows as `"00:00"`, which
+  string-sorts *before* `"23:00"` — so a late-night plan listed its tasks in the wrong
+  order. `sort_minutes()` returns the unwrapped number (1440, not 0) and `format_time()`
+  wraps only for display.
+- **Order of the rest:** tasks with no time sort as infinity and go last. Ties go to
+  higher priority, then title.
 
 Two kinds of sorting work together in the plan. `sort_tasks()` ranks by priority (then
 shortest first) to decide **which** tasks make the cut. `assign_time_slots()` decides
@@ -347,12 +379,111 @@ its pet.
 
 ## 📸 Demo Walkthrough
 
-Describe your app in numbered steps so a reader can follow along without watching a video:
+### What you can do in the app
 
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+Launch with `streamlit run app.py`.
 
-**Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->
+**Sidebar — your day.** Set your name, how many minutes you can spare today, what time
+the day starts, and which weekday to plan for. "Reset everything" clears the session.
+
+**Your pets.** Add a pet with a name, species, breed, and age. Each pet shows its task
+count and how many minutes of care it still has pending. 🗑 removes a pet, and its tasks
+go with it.
+
+**Care tasks.** Add a task to a chosen pet: title, minutes, priority, category, whether it
+repeats daily/weekly/once, and optionally a preferred time. Two dropdowns filter the list
+by pet and by done/pending. Each task has a checkbox to tick it off — which also queues
+its next occurrence if it repeats — and a 🗑 to delete it. Completed tasks show struck
+through, and a queued copy shows its due date.
+
+**Today's schedule.** One button builds the plan. You get a four-metric summary, any
+clash warnings, the schedule table, a "didn't fit" table, and a "Why this plan?" panel.
+The plan stays on screen and updates live as you tick tasks off.
+
+### An example workflow
+
+1. In the sidebar, set **Minutes free for pet care today** to `60` and **Day** to
+   `tuesday`.
+2. Add a pet: **Mochi**, dog. Add a second: **Pichu**, cat.
+3. Add a task for Mochi — **Walk**, 30 min, high priority, preferred time `08:00`.
+4. Add one for Pichu — **Meds**, 5 min, high priority, preferred time `08:00`.
+5. Add another for Pichu — **Vet**, 15 min, high, preferred time `08:15`.
+6. Add one more for Mochi — **Hike**, 90 min, low priority, no preferred time.
+7. Click **Generate schedule**.
+
+The metrics read **Planned 3 · Minutes used 50/60 · Didn't fit 1 · Clashes 3**, and the
+schedule comes out in clock order:
+
+| Time | Task | Pet | Minutes | Priority | Why |
+|------|------|-----|---------|----------|-----|
+| 08:00 | Meds | Pichu | 5 | high | at its preferred time |
+| 08:05 | Walk | Mochi | 30 | high | wanted 08:00, pushed back 5 min |
+| 08:35 | Vet | Pichu | 15 | high | wanted 08:15, pushed back 20 min |
+
+8. Tick **Hike** off. The plan stays on screen and updates rather than disappearing.
+
+### What the Scheduler is doing here
+
+**Budget filtering.** The 90-minute hike is dropped into "Didn't fit today" with the
+reason `needs 90 min, only 25 min left`. The other three tasks total 50 of your 60
+minutes.
+
+**Priority ranking, then clock order.** Meds (5 min) is picked before Walk (30 min)
+because both are high priority and shortest wins the tie — but the *displayed* plan is in
+time order, not pick order.
+
+**Conflict warnings.** Three clashes are reported, grouped by kind and split by whether
+you have to act:
+
+> 🚫 **Two things booked for the same moment** — *(red)*
+> Pichu's 'Meds' and Mochi's 'Walk' both want 08:00 (different pets)
+> *Pick a different time for one of them, or clear its preferred time and let PawPal+ find a free slot.*
+
+> ⏱️ **These run into each other** — *(yellow)*
+> Pichu's 'Vet' wants 08:15, but Mochi's 'Walk' runs 08:00–08:30 (different pets)
+> *Both are still planned — the later one just waits for the first to finish.*
+
+> 🕒 **Starting later than you asked for** — *(yellow)*
+> Pichu's 'Vet' wanted 08:15 but starts at 08:35 (20 min late)
+
+A same-time clash is an error because only you can resolve it. An overlap or a late start
+is a warning, because the plan still works — the later task just waits. **The plan never
+double-books**: notice Walk moved to 08:05 and Vet to 08:35 rather than stacking.
+
+**Recurrence.** Ticking a daily task off marks it done and immediately adds a fresh copy
+due tomorrow, shown greyed with its due date. Unticking removes that copy again.
+
+### Sample CLI output
+
+`python main.py` runs the same features in the terminal, pinned to Tuesday Oct 13 2026 so
+the output never changes. This is the conflict section of that run — the full output is
+under [Sample Output](#️-sample-output) above:
+
+```
+$ python main.py
+
+============================================================
+Pichu's vet call is booked at 08:15, in the middle of Mochi's walk:
+
+Today's Schedule for Jordan (Tuesday Oct 13)
+Time budget: 75 min | starting at 08:00
+------------------------------------------------------------------------
+  TIME   TASK            PET      LENGTH  PRIORITY  WHY
+------------------------------------------------------------------------
+  08:00  Morning walk    Mochi    30 min  high      at its preferred time
+  08:30  Vet call        Pichu    15 min  high      wanted 08:15, pushed back 15 min
+  08:45  Brushing        Pichu    15 min  medium    flexible, fills the gap before 09:00
+  09:00  Medication      Pichu     5 min  high      at its preferred time
+------------------------------------------------------------------------
+  4 task(s) planned, 65 of 75 min used
+  ! Overlap: Pichu's 'Vet call' wants 08:15, but Mochi's 'Morning walk' runs 08:00–08:30 (different pets)
+
+Didn't fit today:
+  Long hike       Mochi    90 min  low       needs 90 min, only 10 min left
+```
+
+Three behaviors visible in those nine lines: the vet call is pushed from 08:15 to 08:30 so
+it doesn't collide with the walk, and the overlap is reported; Brushing has no preferred
+time, so it fills the free gap between 08:45 and the 09:00 medication instead of leaving
+the slot empty; and the 90-minute hike is dropped for lack of budget, with the shortfall
+spelled out.

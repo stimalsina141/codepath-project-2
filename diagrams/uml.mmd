@@ -1,5 +1,7 @@
 classDiagram
-    %% PawPal+ draft design (Phase 2). Update in Phase 6 to match the final implementation.
+    %% PawPal+ final design, matching pawpal_system.py as built.
+    %% Kept in sync with uml_final.mmd.
+    %% Four classes, as drafted in Phase 1, plus two module-level time helpers.
 
     class Owner {
         +str owner_id
@@ -27,22 +29,36 @@ classDiagram
         +remove_task(task_id) bool
         +get_tasks() List~Task~
         +get_pending_tasks() List~Task~
+        +complete_task(task_id, on) Task
+        +reopen_task(task_id) None
         +total_duration() int
     }
 
     class Task {
         +str task_id
         +str title
-        +str category
         +int duration_minutes
         +str priority
+        +str pet_id
+        +str category
         +str preferred_time
         +str recurrence
+        +List~str~ days
+        +date due_date
         +bool completed
+        +int scheduled_minutes
+        +str reason
         +mark_complete() None
+        +reopen() None
         +priority_score() int
-        +is_due_today(day) bool
+        +next_occurrence(completed_on) Task
+        +is_due_today(day, on) bool
         +fits_in(minutes_left) bool
+        +preferred_minutes() int
+        +sort_minutes() int
+        +scheduled_time() str
+        +time_string() str
+        +clear_schedule() None
     }
 
     class Scheduler {
@@ -51,17 +67,42 @@ classDiagram
         +str start_time
         +List~Task~ planned
         +List~Task~ skipped
-        +List~str~ reasons
-        +generate_plan() List~Task~
+        +List~str~ conflicts
+        +generate_plan(day, on) List~Task~
+        +collect_tasks(day, on) List~Task~
         +sort_tasks(tasks) List~Task~
         +filter_by_budget(tasks) List~Task~
         +assign_time_slots(tasks) List~Task~
+        +sort_by_time(tasks) List~Task~
+        +detect_conflicts(tasks) List~str~
+        +filter_tasks(pet_id, completed, pet_name) List~Task~
+        +mark_task_complete(task, on) Task
         +explain_plan() List~str~
+        +get_conflicts() List~str~
         +get_skipped_tasks() List~Task~
+        +pet_for(task) Pet
         +reset() None
+        -_label(task) str
+    }
+
+    class TimeHelpers {
+        <<module>>
+        +PRIORITY_ORDER
+        +MINUTES_PER_DAY
+        +RECURRENCE_STEP
+        +LATE_TOLERANCE_MINUTES
+        +parse_time(text) int
+        +format_time(minutes) str
     }
 
     Owner "1" o-- "*" Pet : owns
     Pet "1" o-- "*" Task : has
     Scheduler "1" --> "1" Owner : plans for
-    Scheduler ..> Task : schedules
+    Scheduler ..> Task : schedules and explains
+    Scheduler ..> Pet : looks up via pet_for()
+    Task ..> Task : next_occurrence() copies itself forward
+    Task ..> TimeHelpers : parses and formats times
+    Scheduler ..> TimeHelpers : lays tasks out on the clock
+
+    note for Task "Holds both input (what the owner entered)\nand output (scheduled_minutes, reason).\nScheduler.reset() must clear the output."
+    note for Scheduler "generate_plan() runs the pipeline:\ncollect -> sort_tasks -> filter_by_budget\n-> assign_time_slots -> detect_conflicts"

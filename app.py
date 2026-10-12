@@ -258,22 +258,82 @@ else:
 # --- Build the schedule ---------------------------------------------------
 # Scheduler does the real work; the UI just renders what it returns.
 
+# Each conflict message from the Scheduler starts with its kind. A bare warning
+# tells an owner what clashed but not what to do, so each kind gets a plain
+# heading, a severity, and one line of advice.
+CONFLICT_HELP = {
+    "Same time": (
+        "🚫 Two things booked for the same moment",
+        "error",
+        "Pick a different time for one of them, or clear its preferred time and "
+        "let PawPal+ find a free slot.",
+    ),
+    "Overlap": (
+        "⏱️ These run into each other",
+        "warning",
+        "Both are still planned — the later one just waits for the first to finish.",
+    ),
+    "Late": (
+        "🕒 Starting later than you asked for",
+        "warning",
+        "Too much is booked earlier in the day. Shorten something, start the day "
+        "sooner, or move this task later on purpose.",
+    ),
+}
+
+
+def show_conflicts(warnings: list[str]) -> None:
+    """Group the Scheduler's conflict messages by kind and explain each one.
+
+    Same-time clashes are shown as errors because the owner has to choose;
+    overlaps and late starts are warnings, since the plan still works.
+    """
+    grouped: dict[str, list[str]] = {}
+    for warning in warnings:
+        kind, _, detail = warning.partition(": ")
+        grouped.setdefault(kind, []).append(detail or warning)
+
+    for kind, details in grouped.items():
+        heading, level, advice = CONFLICT_HELP.get(kind, (kind, "warning", ""))
+        lines = "\n".join(f"- {detail}" for detail in details)
+        box = st.error if level == "error" else st.warning
+        box(f"**{heading}**\n\n{lines}\n\n_{advice}_")
+
+
 st.divider()
 st.subheader("Today's schedule")
 
+# The button only sets a flag. The plan itself is rebuilt on every rerun while
+# that flag is set, so it stays on screen — and stays current — when the owner
+# ticks a task off or changes a filter.
 if st.button("Generate schedule", type="primary", disabled=not owner.pets):
+    st.session_state.show_plan = True
+
+if st.session_state.get("show_plan"):
     try:
         scheduler = Scheduler(owner, start_time=start_time)
         plan = scheduler.generate_plan(day=day)
     except ValueError as error:
         st.error(f"Couldn't build a schedule: {error}")
     else:
+        used = sum(task.duration_minutes for task in plan)
+        skipped = scheduler.get_skipped_tasks()
+        conflicts = scheduler.get_conflicts()
+
         st.caption(
             f"{owner.available_minutes} min budget, starting at {start_time}, for {day.title()}."
         )
 
+        summary = st.columns(4)
+        summary[0].metric("Planned", len(plan))
+        summary[1].metric("Minutes used", f"{used}/{owner.available_minutes}")
+        summary[2].metric("Didn't fit", len(skipped))
+        summary[3].metric("Clashes", len(conflicts))
+
+        # Conflicts come first: they are the part the owner has to act on.
+        show_conflicts(conflicts)
+
         if plan:
-            used = sum(task.duration_minutes for task in plan)
             st.table(
                 [
                     {
@@ -287,16 +347,14 @@ if st.button("Generate schedule", type="primary", disabled=not owner.pets):
                     for task in plan
                 ]
             )
-            st.success(
-                f"{len(plan)} task(s) planned, {used} of {owner.available_minutes} min used."
-            )
+            if not conflicts:
+                st.success(
+                    f"{len(plan)} task(s) planned, {used} of "
+                    f"{owner.available_minutes} min used. No clashes."
+                )
         else:
-            st.warning("Nothing fit in today's budget.")
+            st.warning("Nothing fit in today's budget. Try freeing up more minutes.")
 
-        for warning in scheduler.get_conflicts():
-            st.warning(warning, icon="⚠️")
-
-        skipped = scheduler.get_skipped_tasks()
         if skipped:
             st.markdown("**Didn't fit today**")
             st.table(
