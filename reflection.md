@@ -56,13 +56,15 @@ The tradeoff with #2 and #3 is that Task now holds both input and output, so Sch
 - Describe one tradeoff your scheduler makes.
 - Why is that tradeoff reasonable for this scenario?
 
-**Priority beats preferred_time, and the clock only moves forward.**
+**Conflicts get a warning, not a fix. Whoever asked for the earlier time keeps it, even if it's lower priority.**
 
-My scheduler sorts by priority first and then assigns times by walking the clock forward from the start time. it never goes backwards and it never fills in a gap. so if a high priority task has a preferred_time later in the morning, that task gets scheduled first and drags the clock forward with it, and everything after it gets pushed back too.
+when two tasks want overlapping times, my scheduler doesn't try to work out the best arrangement. it places timed tasks in clock order, the first one keeps its slot, and the later one just gets pushed back until the first is done. then detect_conflicts adds a warning like "Overlap: Pichu's 'Vet call' wants 08:15, but Mochi's 'Morning walk' runs 08:00–08:30 (different pets)" and the plan still shows. it never crashes or refuses to make a plan.
 
-you can see it in my own demo. the morning walk has a preferred_time of 08:00, but Pichu's medication is also high priority and only takes 5 minutes, so medication sorts first. medication wants 09:00, the clock jumps to 09:00, and the walk ends up at 09:15 even though it asked for 08:00. the whole 08:00 to 09:00 hour just sits empty.
+the catch is that priority only decides *which* tasks make it into the day, not *who wins* a time clash. if a low priority 60 min game of fetch wants 08:00 and high priority meds want 08:30, fetch keeps 08:00 and the meds get pushed to 09:00. the owner gets an overlap warning and a "30 min late" warning, but the scheduler doesn't move fetch out of the way on its own.
 
-I'm leaving it this way on purpose. the thing this app is actually for is making sure the important stuff gets done when the owner is short on time, and it does that correctly: the budget filtering and the priority order both work. the times are more of a suggested order than real appointments. fixing it properly would mean pinning the tasks that have a preferred_time into their slots first and then backfilling the free gaps around them, which is a bigger change than the rest of the scheduler needed, and it would mostly matter for the one case where someone sets a lot of preferred times.
+(this replaced an earlier, worse version of the same problem. at first the scheduler assigned times in priority order, so a short high priority task at 09:00 dragged the clock forward and the 08:00 walk ended up at 09:15 with the whole 08:00 hour empty. I fixed that by placing timed tasks in clock order and filling the gaps with flexible ones.)
+
+I think this is reasonable for a pet owner. preferred times are usually things only the owner knows how to trade off. maybe the vet call can't move but the walk can, or the meds have a 30 min window and fetch doesn't. a scheduler that quietly reshuffled things based on priority could move something that really was fixed, which is worse than showing a clear warning and letting the owner decide. it also keeps the logic simple and predictable: what you asked for, in time order, with every clash called out. the downside is that the owner has to read the warnings and fix them by hand.
 
 ---
 

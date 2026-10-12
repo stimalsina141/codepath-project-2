@@ -155,7 +155,7 @@ else:
                 "Category",
                 ["general", "exercise", "feeding", "health", "grooming", "enrichment"],
             )
-            recurrence = st.selectbox("Repeats", ["daily", "weekly"])
+            recurrence = st.selectbox("Repeats", ["daily", "weekly", "once"])
         with col5:
             wants_time = st.checkbox("Has a preferred time")
             preferred = st.text_input("Preferred time (HH:MM)", value="08:00")
@@ -184,17 +184,36 @@ else:
                 )
                 st.success(f"Added '{task_title.strip()}' for {pet_choice.name}.")
 
-    # Tick a task off with Task.mark_complete() / Task.reopen(), or remove it
-    # with Pet.remove_task(). Deletions are collected and applied after the
+    # Tick a task off with Pet.complete_task() / Pet.reopen_task(), or remove
+    # it with Pet.remove_task(). Changes are collected and applied after the
     # loop, so the list is never mutated while it is being iterated.
-    pending_deletes: list[tuple[Pet, str]] = []
+    pending_changes: list[tuple[str, Pet, str]] = []
+
+    filter_col1, filter_col2 = st.columns(2)
+    with filter_col1:
+        pet_filter = st.selectbox(
+            "Show pet",
+            options=[None] + [pet.pet_id for pet in owner.pets],
+            format_func=lambda pet_id: "All pets" if pet_id is None else owner.get_pet(pet_id).name,
+        )
+    with filter_col2:
+        status_filter = st.selectbox(
+            "Show status",
+            options=[None, False, True],
+            format_func=lambda done: {None: "All", False: "Pending", True: "Done"}[done],
+        )
+    visible = {
+        task.task_id
+        for task in Scheduler(owner).filter_tasks(pet_id=pet_filter, completed=status_filter)
+    }
 
     for pet in owner.pets:
-        if not pet.tasks:
+        pet_tasks = [task for task in pet.tasks if task.task_id in visible]
+        if not pet_tasks:
             continue
 
         st.markdown(f"**{pet.name}**")
-        for task in pet.tasks:
+        for task in pet_tasks:
             done_col, label_col, delete_col = st.columns([1, 10, 1])
 
             with done_col:
@@ -205,15 +224,17 @@ else:
                     label_visibility="collapsed",
                 )
                 if is_done and not task.completed:
-                    task.mark_complete()
+                    pending_changes.append(("complete", pet, task.task_id))
                 elif not is_done and task.completed:
-                    task.reopen()
+                    pending_changes.append(("reopen", pet, task.task_id))
 
             with label_col:
                 details = (
                     f"{task.duration_minutes} min · {task.priority} · "
                     f"{task.category} · {task.recurrence}"
                 )
+                if task.due_date:
+                    details += f" · due {task.due_date:%a %b %d}"
                 if task.completed:
                     st.markdown(f"~~{task.title}~~  \n:gray[{details}]")
                 else:
@@ -221,11 +242,16 @@ else:
 
             with delete_col:
                 if st.button("🗑", key=f"del-{task.task_id}", help=f"Delete {task.title}"):
-                    pending_deletes.append((pet, task.task_id))
+                    pending_changes.append(("delete", pet, task.task_id))
 
-    for pet, task_id in pending_deletes:
-        pet.remove_task(task_id)
-    if pending_deletes:
+    for action, pet, task_id in pending_changes:
+        if action == "complete":
+            pet.complete_task(task_id)
+        elif action == "reopen":
+            pet.reopen_task(task_id)
+        else:
+            pet.remove_task(task_id)
+    if pending_changes:
         st.rerun()
 
 
@@ -266,6 +292,9 @@ if st.button("Generate schedule", type="primary", disabled=not owner.pets):
             )
         else:
             st.warning("Nothing fit in today's budget.")
+
+        for warning in scheduler.get_conflicts():
+            st.warning(warning, icon="⚠️")
 
         skipped = scheduler.get_skipped_tasks()
         if skipped:
