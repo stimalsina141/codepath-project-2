@@ -186,19 +186,61 @@ Things to notice:
 
 ```bash
 # Run the full test suite:
-pytest
+python -m pytest
 
-# Run with coverage:
-pytest --cov
+# Quieter output:
+python -m pytest -q
 ```
 
-Sample test output:
+### What the tests cover
+
+43 tests across the logic layer, grouped by behavior:
+
+| Area | Tests | What it checks |
+|------|-------|----------------|
+| Sorting | 5 | The plan comes back in clock order, not priority order. Flexible tasks fill the gaps before a timed task, or wait if they are too long for the gap. Untimed tasks sort last, and a hand-typed `8:00` still sorts before `10:00`. |
+| Recurrence | 8 | Completing a daily task queues a fresh copy due the next day; a weekly one lands seven days out; a `once` task does not repeat. Reopening a task removes the copy it queued, and a queued copy is not planned before its due date. |
+| Conflicts | 7 | Two tasks wanting the same time are flagged, whether they belong to the same pet or to different pets. Overlaps, three-way clashes, and tasks pushed more than 15 minutes late are all reported. Back-to-back tasks are not. |
+| Budget | 5 | Tasks that fit the day's minutes are kept and the rest are skipped with a reason. A task too big for the budget does not block a cheaper one behind it. |
+| Replanning | 2 | `reset()` wipes the times from the previous plan, so a second run never shows stale slots. |
+| Edge cases | 6 | No pets, a pet with no tasks, an unrecognized priority, and malformed times like `""`, `25:00` or `08:70`. |
+| Midnight | 1 | A plan running past 24:00 still lists its tasks in chronological order. |
+
+The two tests that matter most are `test_a_task_that_does_not_fit_does_not_block_cheaper_ones`, which guards the
+greedy-fill behavior that makes a tight day useful, and `test_replanning_clears_times_from_the_previous_plan`,
+which guards the weak spot in the design: the scheduler writes its output onto each `Task`, so a missed reset
+would silently leak yesterday's times into today's plan.
+
+### Test run
 
 ```
-$ pytest -q
-.................                                                        [100%]
-25 passed
+$ python -m pytest
+============================= test session starts ==============================
+platform darwin -- Python 3.14.8, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/smrititimalsina/Desktop/CodePath/codepath-project-2
+plugins: anyio-4.15.1
+collected 43 items
+
+tests/test_pawpal.py ...........................................        [100%]
+
+============================== 43 passed in 0.02s ==============================
 ```
+
+### Confidence level
+
+**★★★★☆ (4 / 5)**
+
+The scheduling logic is well covered and the tests have already earned their keep — writing them surfaced two
+real bugs. A plan that ran past midnight listed its tasks out of order, because times were sorted as `"HH:MM"`
+strings and a task pushed past 24:00 displays as `00:00`, which sorts before `23:00`. And `parse_time("08:70")`
+quietly returned 09:10 instead of rejecting an obvious typo.
+
+A star is held back because the tests only reach the logic layer. `app.py` has no automated coverage, and that
+is exactly where the worst bug so far lived: the pet dropdown passed `Pet` objects straight to `st.selectbox`,
+which hands back a *copy*, so adding a task mutated a throwaway object. The app said "Added Morning walk" and
+the task silently vanished. Every test passed through all of it, because they call `Pet.add_task()` directly
+and never go through Streamlit's widget layer. Until the UI is tested too, passing tests say the scheduler is
+sound — not that the app is.
 
 ## 📐 Smarter Scheduling
 

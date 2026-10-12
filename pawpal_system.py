@@ -29,9 +29,14 @@ def parse_time(text: str) -> int:
     """Convert a "HH:MM" string into minutes since midnight."""
     try:
         hours, minutes = text.strip().split(":")
-        total = int(hours) * 60 + int(minutes)
+        hour_value, minute_value = int(hours), int(minutes)
     except (AttributeError, ValueError):
         raise ValueError(f"expected a time like '08:30', got {text!r}")
+    # Check the minutes on their own: "08:70" would otherwise slide through as
+    # 09:10 rather than being rejected as the typo it is.
+    if not 0 <= minute_value < 60:
+        raise ValueError(f"minutes out of range: {text!r}")
+    total = hour_value * 60 + minute_value
     if not 0 <= total < MINUTES_PER_DAY:
         raise ValueError(f"time out of range: {text!r}")
     return total
@@ -138,6 +143,18 @@ class Task:
         if self.scheduled_minutes is None:
             return ""
         return format_time(self.scheduled_minutes)
+
+    def sort_minutes(self) -> int | None:
+        """Return the minute this task sits at for ordering, or None if untimed.
+
+        Its assigned slot if it has one, otherwise its preferred time. The
+        assigned slot is deliberately left unwrapped: a plan running past
+        midnight keeps climbing (1410, 1440, 1470), so a task at 00:30 still
+        sorts after one at 23:00. format_time() wraps it only for display.
+        """
+        if self.scheduled_minutes is not None:
+            return self.scheduled_minutes
+        return self.preferred_minutes()
 
     def time_string(self) -> str:
         """Return the assigned slot, else the preferred time, as zero-padded "HH:MM".
@@ -383,16 +400,24 @@ class Scheduler:
     def sort_by_time(self, tasks: list[Task]) -> list[Task]:
         """Order tasks by clock time.
 
-        The key is the task's "HH:MM" string: its assigned slot if it has one,
-        otherwise its preferred time. Zero-padded "HH:MM" strings sort the same
-        as the times they stand for ("08:45" < "09:00" < "13:30"), so no
-        conversion to numbers is needed. Tasks with no time get "99:99", which
-        sorts after every real time; priority then title break ties.
+        The key is Task.sort_minutes() — the assigned slot if there is one,
+        else the preferred time — as a number rather than a "HH:MM" string.
+        Minutes are used because a plan that runs past midnight wraps its
+        displayed time back to 00:30, and sorting on that string would put
+        the task first instead of last. Untimed tasks sort after every timed
+        one; priority then title break ties.
         """
-        return sorted(
-            tasks,
-            key=lambda task: (task.time_string() or "99:99", -task.priority_score(), task.title),
-        )
+
+        def order(task: Task) -> tuple[float, int, str]:
+            """Sort key: when it happens, then priority, then title."""
+            minutes = task.sort_minutes()
+            return (
+                float("inf") if minutes is None else minutes,
+                -task.priority_score(),
+                task.title,
+            )
+
+        return sorted(tasks, key=order)
 
     def assign_time_slots(self, tasks: list[Task]) -> list[Task]:
         """Lay tasks out on the clock, returning them in time order.

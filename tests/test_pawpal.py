@@ -5,7 +5,9 @@ Run with:  pytest
 
 from datetime import date, timedelta
 
-from pawpal_system import Owner, Pet, Scheduler, Task
+import pytest
+
+from pawpal_system import Owner, Pet, Scheduler, Task, format_time, parse_time
 
 TUESDAY = date(2026, 10, 13)
 
@@ -296,3 +298,127 @@ def test_task_pushed_well_past_its_time_is_reported_late():
     scheduler.generate_plan(on=TUESDAY)
 
     assert any(c.startswith("Late: Pet1's 'feed'") for c in scheduler.get_conflicts())
+
+
+# --- Budget filtering -------------------------------------------------------
+
+
+def test_tasks_that_fit_the_budget_are_kept():
+    """A 45 min budget takes the two cheap tasks and leaves the 90 min hike."""
+    owner = make_owner([task("hike", 90, "low"), task("walk", 30), task("feed", 10)], minutes=45)
+    plan = Scheduler(owner).generate_plan(on=TUESDAY)
+
+    assert sorted(t.title for t in plan) == ["feed", "walk"]
+
+
+def test_a_task_that_does_not_fit_does_not_block_cheaper_ones():
+    """The hike is skipped, but the budget it freed still goes to brush."""
+    owner = make_owner([task("hike", 90, "high"), task("brush", 10, "low")], minutes=20)
+    scheduler = Scheduler(owner)
+    plan = scheduler.generate_plan(on=TUESDAY)
+
+    assert [t.title for t in plan] == ["brush"]
+    assert [t.title for t in scheduler.get_skipped_tasks()] == ["hike"]
+
+
+def test_skipped_task_explains_the_shortfall():
+    owner = make_owner([task("hike", 90)], minutes=30)
+    scheduler = Scheduler(owner)
+    scheduler.generate_plan(on=TUESDAY)
+
+    assert scheduler.get_skipped_tasks()[0].reason == "needs 90 min, only 30 min left"
+
+
+def test_zero_budget_plans_nothing():
+    owner = make_owner([task("walk", 30)], minutes=0)
+    scheduler = Scheduler(owner)
+
+    assert scheduler.generate_plan(on=TUESDAY) == []
+    assert len(scheduler.get_skipped_tasks()) == 1
+
+
+def test_scheduler_budget_overrides_the_owners():
+    """Passing available_minutes plans a "what if" day without touching Owner."""
+    owner = make_owner([task("walk", 30)], minutes=120)
+
+    assert Scheduler(owner, available_minutes=10).generate_plan(on=TUESDAY) == []
+    assert owner.available_minutes == 120
+
+
+# --- Replanning -------------------------------------------------------------
+
+
+def test_replanning_clears_times_from_the_previous_plan():
+    """Scheduler output lives on Task, so reset() must wipe every task."""
+    owner = make_owner([task("walk", 30), task("feed", 10)], minutes=120)
+    Scheduler(owner).generate_plan(on=TUESDAY)
+
+    plan = Scheduler(owner, available_minutes=10).generate_plan(on=TUESDAY)
+
+    assert [t.title for t in plan] == ["feed"]
+    walk = next(t for t in owner.get_pet("p1").tasks if t.title == "walk")
+    assert walk.scheduled_minutes is None
+    assert walk.scheduled_time() == ""
+
+
+def test_reset_clears_skipped_and_conflicts():
+    """walk and meds clash at 08:00; the hike is too big for the budget."""
+    owner = make_owner(
+        [task("walk", 30, at="08:00"), task("meds", 5, at="08:00"), task("hike", 90, "low")],
+        minutes=40,
+    )
+    scheduler = Scheduler(owner)
+    scheduler.generate_plan(on=TUESDAY)
+    assert scheduler.get_skipped_tasks() and scheduler.get_conflicts()
+
+    scheduler.reset()
+
+    assert scheduler.get_skipped_tasks() == []
+    assert scheduler.get_conflicts() == []
+    assert scheduler.planned == []
+
+
+# --- Empty and malformed input ----------------------------------------------
+
+
+def test_owner_with_no_pets_plans_nothing():
+    assert Scheduler(Owner(owner_id="o1", name="Jordan")).generate_plan(on=TUESDAY) == []
+
+
+def test_pet_with_no_tasks_plans_nothing():
+    owner = make_owner([])
+
+    assert Scheduler(owner).generate_plan(on=TUESDAY) == []
+
+
+def test_unknown_priority_sorts_last_instead_of_crashing():
+    owner = make_owner([task("odd", 10, "urgent"), task("walk", 10, "low")], minutes=120)
+    scheduler = Scheduler(owner)
+
+    assert scheduler.sort_tasks(scheduler.collect_tasks("tuesday"))[0].title == "walk"
+
+
+def test_priority_is_case_insensitive():
+    assert task("x", 5, "HIGH ").priority_score() == task("y", 5, "high").priority_score()
+
+
+@pytest.mark.parametrize("bad", ["", "oops", "8", "25:00", "08:70"])
+def test_parse_time_rejects_bad_input(bad):
+    with pytest.raises(ValueError):
+        parse_time(bad)
+
+
+def test_format_time_wraps_past_midnight():
+    assert format_time(1440) == "00:00"
+    assert format_time(1470) == "00:30"
+
+
+# --- Midnight ---------------------------------------------------------------
+
+
+def test_plan_crossing_midnight_stays_in_chronological_order():
+    """A task pushed past 24:00 shows as 00:00 but must still be listed last."""
+    owner = make_owner([task("walk", 60, at="23:00"), task("feed", 30, "low")], minutes=120)
+    plan = Scheduler(owner, start_time="23:00").generate_plan(on=TUESDAY)
+
+    assert [(t.title, t.scheduled_time()) for t in plan] == [("walk", "23:00"), ("feed", "00:00")]
